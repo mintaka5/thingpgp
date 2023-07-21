@@ -30,6 +30,8 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.stream.Stream;
 
+import static java.lang.System.out;
+
 public class PGPWindow extends JFrame {
     public final static String PUBLIC_KEY_PREFIX = "public-";
     public final static Border DEFAULT_BORDER = BorderFactory.createEmptyBorder(3, 3, 3, 3);
@@ -156,7 +158,9 @@ public class PGPWindow extends JFrame {
             Instant created = Instant.ofEpochMilli(f.toFile().lastModified());
             String createdS = DateTimeFormatter.ofPattern(DATE_FORMAT_DEFAULT).withZone(ZoneId.systemDefault()).format(created);
             String fname = f.getFileName().toString();
-            fname = fname.replace(ENC_MSG_PREFIX, "").replace(".asc", "");
+            fname = fname.replace(ENC_MSG_PREFIX, "")
+                    .replace(".asc", "");
+            fname = fname.substring(0, fname.indexOf("-"));
 
             return fname.concat(" @ ").concat(createdS);
         }).toArray(String[]::new);
@@ -292,6 +296,26 @@ public class PGPWindow extends JFrame {
                 encBtn.setEnabled((msgTxt.getText().length() > 0));
             }
         });
+        msgTxt.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                if(msgTxt.getText().length() > 0) {
+                    msgTxt.setEnabled(true);
+                    encBtn.setEnabled(true);
+                }
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                msgTxt.setEnabled(false);
+                encBtn.setEnabled(false);
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+
+            }
+        });
         panel.add(msgScroll, gc);
 
         gc.fill = GridBagConstraints.HORIZONTAL;
@@ -309,6 +333,11 @@ public class PGPWindow extends JFrame {
                 byte[] encB = ThingPGP.encrypt(currentEncryptionKey, msgB);
                 // save to file
                 Path msgP = Path.of(msgsPath.toString(), ENC_MSG_PREFIX.concat(hashId).concat(".asc"));
+                // need another unique string to create a unique filename
+                String fname = msgP.toString();
+                String fileH = Utilities.crc32(hashId.concat(";").concat(fname).concat(String.valueOf(Instant.now().toEpochMilli())));
+                msgP = Path.of(msgsPath.toString(), ENC_MSG_PREFIX.concat(hashId).concat("-").concat(fileH).concat(".asc"));
+
                 ArmoredOutputStream aos = new ArmoredOutputStream(new BufferedOutputStream(new FileOutputStream(msgP.toFile())));
                 aos.write(encB);
                 aos.flush();
