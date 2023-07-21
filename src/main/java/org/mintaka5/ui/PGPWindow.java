@@ -10,13 +10,17 @@ import org.mintaka5.crypto.ThingPGP;
 import org.mintaka5.util.Utilities;
 
 import javax.swing.*;
+import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
-import java.io.*;
+import java.io.BufferedOutputStream;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,9 +32,11 @@ import java.util.stream.Stream;
 
 public class PGPWindow extends JFrame {
     public final static String PUBLIC_KEY_PREFIX = "public-";
+    public final static Border DEFAULT_BORDER = BorderFactory.createEmptyBorder(3, 3, 3, 3);
 
     public final static String SECRET_KEY_PREFIX = "sercret-";
     private static final String DATE_FORMAT_DEFAULT = "YYYY-MM-dd HH:mm:ss";
+    private static final String ENC_MSG_PREFIX = "red-";
 
     private JButton genBtn;
 
@@ -57,6 +63,8 @@ public class PGPWindow extends JFrame {
     private JTextArea decryptTxt;
     private JButton decBtn;
     private JTextField idLbl;
+    private JList<String> msgList;
+    private String[] msgFiles;
 
     public PGPWindow() throws IOException, PGPException {
         super("pgp thing");
@@ -77,9 +85,83 @@ public class PGPWindow extends JFrame {
         buildKeychainPanel();
         // message panel
         buildMessagePanel();
+        // messages list
+        buildMessageListPanel();
 
         // show window!
         setVisible(true);
+    }
+
+    private void buildMessageListPanel() throws IOException {
+        JPanel pnl = new JPanel();
+        GridBagLayout gb = new GridBagLayout();
+        GridBagConstraints gc = new GridBagConstraints();
+        pnl.setLayout(gb);
+
+        gc.insets = new Insets(5, 5, 5, 5);
+        gc.gridx = 0;
+        gc.gridy = 0;
+        gc.weighty = 0;
+        gc.fill = GridBagConstraints.HORIZONTAL;
+        JLabel msgListLbl = new JLabel("my messages");
+        pnl.add(msgListLbl, gc);
+
+        gc.gridy = 1;
+        gc.weighty = 1;
+        gc.fill = GridBagConstraints.BOTH;
+        msgList = new JList<String>();
+        JScrollPane scroll = new JScrollPane(msgList);
+        updateMessageList();
+        pnl.add(scroll, gc);
+
+        add(pnl, BorderLayout.EAST);
+    }
+
+    private void postPassword() {
+        {
+            char[] passC = passwdPrompt.getPassword();
+
+            if(passC.length > 0) {
+                idLbl.setText(hashId);
+
+                try {
+                    Path pubP = Files.list(keysPath).filter((f) -> f.getFileName().toString().contains(hashId) && f.getFileName().toString().contains(PUBLIC_KEY_PREFIX)).findFirst().get();
+                    PGPPublicKeyRing pubRing = ThingPGP.importPublicKeyring(pubP.toFile());
+                    currentEncryptionKey = ThingPGP.getEncryptionKey(pubRing);
+
+                    Path secP = Files.list(keysPath).filter((f) -> f.getFileName().toString().contains(hashId) && f.getFileName().toString().contains(SECRET_KEY_PREFIX)).findFirst().get();
+                    PGPSecretKeyRing secRing = ThingPGP.importSecretKeyring(secP.toFile());
+                    currentDecryptionKey = ThingPGP.getDecryptionKey(secRing, currentEncryptionKey.getKeyID(), String.copyValueOf(passC));
+
+                    userIdentLbl.setText(pubRing.getPublicKey().getUserIDs().next());
+                    Instant keyInstant = currentEncryptionKey.getCreationTime().toInstant();
+                    String keyCreated = DateTimeFormatter.ofPattern(DATE_FORMAT_DEFAULT).withZone(ZoneId.systemDefault()).format(keyInstant);
+                    keyCreatedLbl.setText(keyCreated);
+
+                    // activate message panel items
+                    msgTxt.setEnabled(true);
+
+                    passwdFrame.setVisible(false);
+                } catch (IOException ex) {
+                    throw new RuntimeException("unable to find files containing specified hash identifier.".concat(ex.getMessage()));
+                } catch (PGPException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        }
+    }
+
+    private void updateMessageList() throws IOException {
+        msgFiles = Files.list(msgsPath).map((f) -> {
+            Instant created = Instant.ofEpochMilli(f.toFile().lastModified());
+            String createdS = DateTimeFormatter.ofPattern(DATE_FORMAT_DEFAULT).withZone(ZoneId.systemDefault()).format(created);
+            String fname = f.getFileName().toString();
+            fname = fname.replace(ENC_MSG_PREFIX, "").replace(".asc", "");
+
+            return fname.concat(" @ ").concat(createdS);
+        }).toArray(String[]::new);
+
+        msgList.setListData(msgFiles);
     }
 
     private void setupWindow() {
@@ -87,6 +169,7 @@ public class PGPWindow extends JFrame {
         setLocationByPlatform(true);
         setLayout(new BorderLayout());
         setSize(640, 480);
+        setMinimumSize(new Dimension(640, 480));
         // setSize(960, 720);
         // setSize(1024, 768);
         // setResizable(false);
@@ -120,6 +203,7 @@ public class PGPWindow extends JFrame {
 
     private void buildKeyInfoPanel() {
         JPanel panel = new JPanel();
+        panel.setBorder(DEFAULT_BORDER);
         panel.setBorder(new EmptyBorder(5, 5, 5, 5));
         GridBagLayout gbl = new GridBagLayout();
         GridBagConstraints gbc = new GridBagConstraints();
@@ -172,6 +256,7 @@ public class PGPWindow extends JFrame {
 
     private void buildMessagePanel() {
         JPanel panel = new JPanel();
+        panel.setBorder(DEFAULT_BORDER);
         GridBagLayout gb = new GridBagLayout();
         GridBagConstraints gc = new GridBagConstraints();
         panel.setLayout(gb);
@@ -223,7 +308,7 @@ public class PGPWindow extends JFrame {
                 // write to messages folder
                 byte[] encB = ThingPGP.encrypt(currentEncryptionKey, msgB);
                 // save to file
-                Path msgP = Path.of(msgsPath.toString(), "red-".concat(hashId).concat(".asc"));
+                Path msgP = Path.of(msgsPath.toString(), ENC_MSG_PREFIX.concat(hashId).concat(".asc"));
                 ArmoredOutputStream aos = new ArmoredOutputStream(new BufferedOutputStream(new FileOutputStream(msgP.toFile())));
                 aos.write(encB);
                 aos.flush();
@@ -231,6 +316,8 @@ public class PGPWindow extends JFrame {
                 msgTxt.setText("");
 
                 decryptTxt.setText(Files.readString(msgP));
+
+                updateMessageList();
 
             } catch (IOException | PGPException ex) {
                 throw new RuntimeException(ex);
@@ -257,7 +344,9 @@ public class PGPWindow extends JFrame {
             }
 
             @Override
-            public void removeUpdate(DocumentEvent e) {}
+            public void removeUpdate(DocumentEvent e) {
+                decBtn.setEnabled(false);
+            }
 
             @Override
             public void changedUpdate(DocumentEvent e) {}
@@ -292,7 +381,7 @@ public class PGPWindow extends JFrame {
 
     private void buildKeychainPanel() throws IOException {
         JPanel panel = new JPanel();
-
+        panel.setBorder(DEFAULT_BORDER);
         GridBagLayout gb = new GridBagLayout();
         GridBagConstraints gc = new GridBagConstraints();
         panel.setLayout(gb);
@@ -327,7 +416,7 @@ public class PGPWindow extends JFrame {
         panel.add(chainPane, gc);
         updateChainList();
 
-        add(panel, BorderLayout.EAST);
+        add(panel, BorderLayout.WEST);
     }
 
     private void showPasswordPrompt(String hashId) {
@@ -335,59 +424,48 @@ public class PGPWindow extends JFrame {
         GridBagConstraints gbc = new GridBagConstraints();
 
         JPanel passwdPanel = new JPanel();
+        passwdPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
         passwdPanel.setLayout(gbl);
 
+        gbc.insets = new Insets(5, 5, 5, 5);
         gbc.gridx = 0;
         gbc.gridy = 0;
         gbc.weightx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
         passwdPrompt = new JPasswordField();
+        passwdPrompt.addKeyListener(new KeyListener() {
+            @Override
+            public void keyTyped(KeyEvent e) {}
+
+            @Override
+            public void keyPressed(KeyEvent e) {}
+
+            @Override
+            public void keyReleased(KeyEvent e) {
+                if(e.getKeyCode() == 10) {
+                    postPassword();
+                }
+            }
+        });
         passwdPrompt.setColumns(25);
         passwdPanel.add(passwdPrompt, gbc);
 
-        gbc.gridx = 1;
-        gbc.gridy = 0;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.gridx = 0;
+        gbc.gridy = 1;
         gbc.weightx = 0;
         JButton submitBtn = new JButton("submit");
         passwdPanel.add(submitBtn, gbc);
 
         passwdFrame = new JDialog(this, "enter password!", true);
-        passwdFrame.setLocationRelativeTo(this);
-
-        submitBtn.addActionListener(e -> {
-            idLbl.setText(hashId);
-
-            char[] passC = passwdPrompt.getPassword();
-
-            if(passC.length > 0) {
-                try {
-                    Path pubP = Files.list(keysPath).filter((f) -> f.getFileName().toString().contains(hashId) && f.getFileName().toString().contains(PUBLIC_KEY_PREFIX)).findFirst().get();
-                    PGPPublicKeyRing pubRing = ThingPGP.importPublicKeyring(pubP.toFile());
-                    currentEncryptionKey = ThingPGP.getEncryptionKey(pubRing);
-
-                    Path secP = Files.list(keysPath).filter((f) -> f.getFileName().toString().contains(hashId) && f.getFileName().toString().contains(SECRET_KEY_PREFIX)).findFirst().get();
-                    PGPSecretKeyRing secRing = ThingPGP.importSecretKeyring(secP.toFile());
-                    currentDecryptionKey = ThingPGP.getDecryptionKey(secRing, currentEncryptionKey.getKeyID(), String.copyValueOf(passC));
-
-                    userIdentLbl.setText(pubRing.getPublicKey().getUserIDs().next());
-                    Instant keyInstant = currentEncryptionKey.getCreationTime().toInstant();
-                    String keyCreated = DateTimeFormatter.ofPattern(DATE_FORMAT_DEFAULT).withZone(ZoneId.systemDefault()).format(keyInstant);
-                    keyCreatedLbl.setText(keyCreated);
-
-                    // activate message panel items
-                    msgTxt.setEnabled(true);
-
-                    passwdFrame.setVisible(false);
-                } catch (IOException ex) {
-                    throw new RuntimeException("unable to find files containing specified hash identifier.".concat(ex.getMessage()));
-                } catch (PGPException ex) {
-                    throw new RuntimeException(ex);
-                }
-            }
-        });
-
+        passwdFrame.setResizable(false);
+        passwdFrame.setSize(new Dimension(200, 180));
         passwdFrame.setLocationByPlatform(true);
+        passwdFrame.getRootPane().setBorder(DEFAULT_BORDER);
         passwdFrame.getContentPane().add(passwdPanel);
-        passwdFrame.pack();
+
+        submitBtn.addActionListener(e -> postPassword());
+
         passwdFrame.setVisible(true);
     }
 
@@ -409,6 +487,7 @@ public class PGPWindow extends JFrame {
 
     private void buildkeyGenPanel() throws PGPException {
         JPanel keyGenPanel = new JPanel();
+        keyGenPanel.setBorder(DEFAULT_BORDER);
         GridBagLayout keyGenLayout = new GridBagLayout();
         GridBagConstraints keyGenGBC = new GridBagConstraints();
         keyGenPanel.setLayout(keyGenLayout);

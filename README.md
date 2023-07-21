@@ -6,3 +6,7 @@
 
 * all keys and messages are stored locally as armored ascii files. no 3rd parties are involved in key storage.
 * OpenPGP because of reasons.
+
+### how to run it?
+* make sure you have [Java Runtime (JRE)](https://adoptium.net/temurin/releases/) installed.
+* run `java -jar thingpgp-<version>.jar`
