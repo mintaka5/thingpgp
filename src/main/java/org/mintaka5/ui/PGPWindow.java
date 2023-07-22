@@ -14,13 +14,12 @@ import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.event.ListSelectionEvent;
+import javax.swing.event.ListSelectionListener;
 import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
-import java.io.BufferedOutputStream;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -67,6 +66,7 @@ public class PGPWindow extends JFrame {
     private JTextField idLbl;
     private JList<String> msgList;
     private String[] msgFiles;
+    private String currentMsgId;
 
     public PGPWindow() throws IOException, PGPException {
         super("pgp thing");
@@ -112,6 +112,19 @@ public class PGPWindow extends JFrame {
         gc.weighty = 1;
         gc.fill = GridBagConstraints.BOTH;
         msgList = new JList<String>();
+        msgList.setEnabled(false);
+        msgList.addListSelectionListener(new ListSelectionListener() {
+            @Override
+            public void valueChanged(ListSelectionEvent e) {
+                if(e.getValueIsAdjusting()) {
+                    try {
+                        processMessageSelect();
+                    } catch (IOException ex) {
+                        throw new RuntimeException("unable to process selected message. ".concat(ex.getMessage()));
+                    }
+                }
+            }
+        });
         JScrollPane scroll = new JScrollPane(msgList);
         updateMessageList();
         pnl.add(scroll, gc);
@@ -119,13 +132,25 @@ public class PGPWindow extends JFrame {
         add(pnl, BorderLayout.EAST);
     }
 
+    private void processMessageSelect() throws IOException {
+        // clear all previous things
+        msgTxt.setText("");
+        msgTxt.setEnabled(false);
+        encBtn.setEnabled(false);
+
+        currentMsgId = msgList.getSelectedValue().substring(0, msgList.getSelectedValue().indexOf(" @")).strip();
+        Path fileP = Files.list(msgsPath).filter((f) -> f.toString().contains(currentMsgId)).findFirst().get();
+        ArmoredInputStream ais = new ArmoredInputStream(new BufferedInputStream(new FileInputStream(fileP.toFile())));
+        byte[] encMsg = ais.readAllBytes();
+        String encMsgS = new String(encMsg, StandardCharsets.UTF_8);
+        decryptTxt.setText(encMsgS);
+    }
+
     private void postPassword() {
         {
             char[] passC = passwdPrompt.getPassword();
 
             if(passC.length > 0) {
-                idLbl.setText(hashId);
-
                 try {
                     Path pubP = Files.list(keysPath).filter((f) -> f.getFileName().toString().contains(hashId) && f.getFileName().toString().contains(PUBLIC_KEY_PREFIX)).findFirst().get();
                     PGPPublicKeyRing pubRing = ThingPGP.importPublicKeyring(pubP.toFile());
@@ -140,14 +165,20 @@ public class PGPWindow extends JFrame {
                     String keyCreated = DateTimeFormatter.ofPattern(DATE_FORMAT_DEFAULT).withZone(ZoneId.systemDefault()).format(keyInstant);
                     keyCreatedLbl.setText(keyCreated);
 
+                    idLbl.setText(hashId);
+
+                    passwdFrame.setVisible(false);
+                    chainList.clearSelection();
+
                     // activate message panel items
                     msgTxt.setEnabled(true);
 
-                    passwdFrame.setVisible(false);
-                } catch (IOException ex) {
-                    throw new RuntimeException("unable to find files containing specified hash identifier.".concat(ex.getMessage()));
-                } catch (PGPException ex) {
-                    throw new RuntimeException(ex);
+                    // activate message list as well since we have a current key set
+                    msgList.setEnabled(true);
+                } catch (IOException | PGPException ex) {
+
+                    // the password was incorrect or something went wrong when trying to expose secret key
+                    // throw new RuntimeException("unable to find files containing specified hash identifier.".concat(ex.getMessage()));
                 }
             }
         }
@@ -160,7 +191,7 @@ public class PGPWindow extends JFrame {
             String fname = f.getFileName().toString();
             fname = fname.replace(ENC_MSG_PREFIX, "")
                     .replace(".asc", "");
-            fname = fname.substring(0, fname.indexOf("-"));
+            // fname = fname.substring(0, fname.indexOf("-"));
 
             return fname.concat(" @ ").concat(createdS);
         }).toArray(String[]::new);
@@ -172,9 +203,9 @@ public class PGPWindow extends JFrame {
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationByPlatform(true);
         setLayout(new BorderLayout());
-        setSize(640, 480);
-        setMinimumSize(new Dimension(640, 480));
-        // setSize(960, 720);
+        // setSize(640, 480);
+        setMinimumSize(new Dimension(960, 720));
+        setSize(960, 720);
         // setSize(1024, 768);
         // setResizable(false);
 
@@ -346,6 +377,8 @@ public class PGPWindow extends JFrame {
 
                 decryptTxt.setText(Files.readString(msgP));
 
+                chainList.clearSelection();
+
                 updateMessageList();
 
             } catch (IOException | PGPException ex) {
@@ -388,18 +421,19 @@ public class PGPWindow extends JFrame {
         decBtn = new JButton("decrypt");
         decBtn.setEnabled(false);
         decBtn.addActionListener((e) -> {
-            if(currentDecryptionKey != null && !hashId.isEmpty()) {
+            if(currentDecryptionKey != null && !currentMsgId.isEmpty()) {
                 try {
-                    Path msgP = Files.list(msgsPath).filter((f) -> f.getFileName().toString().contains(hashId)).findFirst().get();
-
+                    Path msgP = Files.list(msgsPath).filter((f) -> f.getFileName().toString().contains(currentMsgId)).findFirst().get();
                     ArmoredInputStream ais = new ArmoredInputStream(new FileInputStream(msgP.toFile()));
                     byte[] decB = ais.readAllBytes();
                     byte[] clearB = ThingPGP.decrypt(currentDecryptionKey, decB);
                     msgTxt.setText(new String(clearB, StandardCharsets.UTF_8));
                     decryptTxt.setText("");
-
                 } catch (Exception ex) {
-                    throw new RuntimeException(ex);
+                    // reset all current message stuff
+                    decryptTxt.setText("");
+                    msgList.clearSelection();
+                    throw new RuntimeException("failed to decrypt message. check key ID. ".concat(ex.getMessage()));
                 }
             }
         });
