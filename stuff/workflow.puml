@@ -1,0 +1,7 @@
+@startuml
+(open app) --> (has a key?)
+(has a key?) --> (generate one) : no
+(has a key?) --> (enter password) : yes
+(enter password) --> (prepare components) : success
+(enter password) --> (enter password) : failure
+@enduml

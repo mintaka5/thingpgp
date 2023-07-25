@@ -29,8 +29,6 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.stream.Stream;
 
-import static java.lang.System.out;
-
 public class PGPWindow extends JFrame {
     public final static String PUBLIC_KEY_PREFIX = "public-";
     public final static Border DEFAULT_BORDER = BorderFactory.createEmptyBorder(3, 3, 3, 3);
