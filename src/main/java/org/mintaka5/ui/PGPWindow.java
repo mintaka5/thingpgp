@@ -6,8 +6,8 @@ import org.bouncycastle.bcpg.ArmoredInputStream;
 import org.bouncycastle.bcpg.ArmoredOutputStream;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.openpgp.*;
-import org.mintaka5.crypto.ThingPGP;
 import org.mintaka5.util.Utilities;
+import org.mintaka5.crypto.ThingPGP;
 
 import javax.swing.*;
 import javax.swing.border.Border;
@@ -623,10 +623,10 @@ public class PGPWindow extends JFrame {
     }
 
     private void exportAllKeys(String id, String pass) throws IOException, PGPException {
-        PGPKeyRingGenerator keyRing = ThingPGP.generateKeyRing(id, pass);
+        PGPKeyRingGenerator keyRing = ThingPGP.generateKeyRing(id, pass.toCharArray());
         Path[] keyFiles = createKeyFilePath(id);
-        ThingPGP.exportPublicKey(keyRing, keyFiles[0].toFile(), true);
-        ThingPGP.exportSecretKey(keyRing, keyFiles[1].toFile(), true);
+        ThingPGP.exportPublicKey(keyRing.generatePublicKeyRing(), keyFiles[0].toFile(), true);
+        ThingPGP.exportSecretKey(keyRing.generateSecretKeyRing(), keyFiles[1].toFile(), true);
     }
 
     private Path[] createKeyFilePath(String id) {

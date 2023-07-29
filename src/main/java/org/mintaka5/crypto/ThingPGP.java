@@ -6,7 +6,6 @@ import org.bouncycastle.bcpg.sig.KeyFlags;
 import org.bouncycastle.crypto.generators.RSAKeyPairGenerator;
 import org.bouncycastle.crypto.params.RSAKeyGenerationParameters;
 import org.bouncycastle.openpgp.*;
-import org.bouncycastle.openpgp.bc.BcPGPPublicKeyRingCollection;
 import org.bouncycastle.openpgp.bc.BcPGPSecretKeyRingCollection;
 import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory;
 import org.bouncycastle.openpgp.operator.PBESecretKeyEncryptor;
@@ -32,20 +31,18 @@ import java.util.Iterator;
 public class ThingPGP {
     /**
      *
-     * @param krGen generator that created the needed secret key
+     * @param ring secret key ring
      * @param out file that will store the secret key
      * @param armored whether to output file as ASCII armor or not
      */
-    public static void exportSecretKey(PGPKeyRingGenerator krGen, File out, boolean armored) throws IOException {
-        PGPSecretKeyRing secRing = krGen.generateSecretKeyRing();
-
+    public static void exportSecretKey(PGPSecretKeyRing ring, File out, boolean armored) throws IOException {
         if(armored) {
             ArmoredOutputStream aos = new ArmoredOutputStream(new BufferedOutputStream(new FileOutputStream(out)));
-            secRing.encode(aos);
+            ring.encode(aos);
             aos.close();
         } else {
             FileOutputStream fos = new FileOutputStream(out);
-            secRing.encode(fos);
+            ring.encode(fos);
             fos.close();
         }
     }
@@ -56,7 +53,7 @@ public class ThingPGP {
      * @param passwd password to protect secret keys
      * @return the keyring derived from the generator
      */
-    public static PGPKeyRingGenerator generateKeyRing(String id, String passwd) throws PGPException {
+    public static PGPKeyRingGenerator generateKeyRing(String id, char[] passwd) throws PGPException {
         int s2kCount = 0xc0;
 
         RSAKeyPairGenerator kpg = new RSAKeyPairGenerator();
@@ -114,7 +111,7 @@ public class ThingPGP {
                 PGPEncryptedData.AES_256,
                 sha256Calc,
                 s2kCount
-        )).build(passwd.toCharArray());
+        )).build(passwd);
 
         // finally, create the keyring itself
         PGPKeyRingGenerator krGen = new PGPKeyRingGenerator(
@@ -137,20 +134,18 @@ public class ThingPGP {
 
     /**
      *
-     * @param krGen generator that provides the key ring needed
+     * @param ring generator that provides the key ring needed
      * @param out output file
      * @param armored ASCII armored or not?
      */
-    public static void exportPublicKey(PGPKeyRingGenerator krGen, File out, boolean armored) throws IOException {
-        PGPPublicKeyRing pubRing = krGen.generatePublicKeyRing();
-
+    public static void exportPublicKey(PGPPublicKeyRing ring, File out, boolean armored) throws IOException {
         if(armored) {
             ArmoredOutputStream aos = new ArmoredOutputStream(new BufferedOutputStream(new FileOutputStream(out)));
-            pubRing.encode(aos);
+            ring.encode(aos);
             aos.close();
         } else {
             FileOutputStream fos = new FileOutputStream(out);
-            pubRing.encode(fos);
+            ring.encode(fos);
             fos.close();
         }
     }
@@ -300,5 +295,12 @@ public class ThingPGP {
         comData.close();
 
         return bOut.toByteArray();
+    }
+
+    public static PGPPublicKeyRing decodePublicRing(byte[] b) throws IOException {
+        ByteArrayInputStream i = new ByteArrayInputStream(b);
+        PGPObjectFactory f = new JcaPGPObjectFactory(PGPUtil.getDecoderStream(i));
+
+        return (PGPPublicKeyRing) f.nextObject();
     }
 }
