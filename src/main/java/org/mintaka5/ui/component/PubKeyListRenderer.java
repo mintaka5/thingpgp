@@ -16,6 +16,7 @@ public class PubKeyListRenderer extends JLabel implements ListCellRenderer<KeyRe
 
         setOpaque(true);
         setText(date + "\r\n" + hash);
+        setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
         if(cellHasFocus || isSelected) {
             setForeground(list.getSelectionForeground());

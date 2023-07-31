@@ -20,12 +20,13 @@ import org.mintaka5.model.KeyRepo;
 import org.mintaka5.ui.component.PubKeyListRenderer;
 
 import javax.swing.*;
+import javax.swing.event.ListSelectionEvent;
+import javax.swing.event.ListSelectionListener;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.awt.event.KeyEvent;
-import java.awt.event.KeyListener;
+import java.awt.event.*;
 import java.io.ByteArrayOutputStream;
+import java.io.FileFilter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -64,6 +65,8 @@ public class PGPWindow2 extends JFrame {
     private PGPPublicKeyRing activePubRing = null;
     private JTextField pubKeyHashTxt;
     private JList<KeyRepo> pubsList;
+    private JButton uploadPubKey;
+    private JTextField pubKeyDateTxt;
 
     public PGPWindow2() throws IOException {
         super("pretty good secrets");
@@ -241,6 +244,7 @@ public class PGPWindow2 extends JFrame {
 
     private JDialog buildPubListDialog() {
         JDialog d = new JDialog(this, true);
+        d.setTitle("my encryption keys");
 
         GridBagLayout gb = new GridBagLayout();
         d.setLayout(gb);
@@ -249,7 +253,7 @@ public class PGPWindow2 extends JFrame {
         gc.insets = DEFAULT_GC_INSETS;
         gc.gridx = 0;
         gc.gridy = 0;
-        JLabel myPubsLbl = new JLabel("my encryption keys");
+        JLabel myPubsLbl = new JLabel("double click to select from existing public keys, or upload new one");
         d.add(myPubsLbl, gc);
 
         gc.gridx = 0;
@@ -261,8 +265,31 @@ public class PGPWindow2 extends JFrame {
         ).forEach((k) -> model.addElement(k));
 
         pubsList = new JList<KeyRepo>(model);
+        JScrollPane pubPane = new JScrollPane(pubsList);
+        pubsList.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if(e.getClickCount() == 2) {
+                    // double clicked
+                    int index = ((JList) e.getSource()).locationToIndex(e.getPoint());
+                }
+            }
+        });
         pubsList.setCellRenderer(new PubKeyListRenderer());
-        d.add(pubsList, gc);
+        d.add(pubPane, gc);
+
+        gc.gridx = 0;
+        gc.gridy = 2;
+        uploadPubKey = new JButton("upload key");
+        uploadPubKey.addActionListener((e) -> {
+            JFileChooser fc = new JFileChooser();
+            fc.setCurrentDirectory(STORE_PATH.getParent().getParent().toFile());
+            fc.setDialogTitle("select public key file");
+            fc.setDialogType(JFileChooser.OPEN_DIALOG);
+            fc.addChoosableFileFilter(new FileNameExtensionFilter("OpenPGP Public Key (.asc, .gpg)", "asc", "gpg"));
+            fc.showOpenDialog(d);
+        });
+        d.add(uploadPubKey, gc);
 
         d.pack();
         d.setLocationRelativeTo(this);
@@ -291,6 +318,21 @@ public class PGPWindow2 extends JFrame {
         pubKeyHashTxt = new JTextField();
         pubKeyHashTxt.setEnabled(false);
         p.add(pubKeyHashTxt, gc);
+
+        gc.gridx = 0;
+        gc.gridy = 1;
+        gc.weightx = 0;
+        gc.fill = GridBagConstraints.NONE;
+        JLabel dateLbl = new JLabel("date:");
+        p.add(dateLbl, gc);
+
+        gc.gridx = 1;
+        gc.gridy = 1;
+        gc.weightx = 1;
+        gc.fill = GridBagConstraints.HORIZONTAL;
+        pubKeyDateTxt = new JTextField();
+        pubKeyDateTxt.setEnabled(false);
+        p.add(pubKeyDateTxt, gc);
 
         return p;
     }
