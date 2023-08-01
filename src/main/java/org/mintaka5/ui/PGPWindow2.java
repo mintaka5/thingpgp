@@ -311,13 +311,32 @@ public class PGPWindow2 extends JFrame {
         gc.gridx = 0;
         gc.gridy = 2;
         uploadPubKey = new JButton("upload key");
+        JFileChooser fc = new JFileChooser();
         uploadPubKey.addActionListener((e) -> {
-            JFileChooser fc = new JFileChooser();
+            activePubRing = null;
+
             fc.setCurrentDirectory(STORE_PATH.getParent().getParent().toFile());
             fc.setDialogTitle("select public key file");
             fc.setDialogType(JFileChooser.OPEN_DIALOG);
             fc.addChoosableFileFilter(new FileNameExtensionFilter("OpenPGP Public Key (.asc, .gpg)", "asc", "gpg"));
-            fc.showOpenDialog(d);
+            int showUpload = fc.showOpenDialog(d);
+            if(showUpload == JFileChooser.APPROVE_OPTION) {
+                File f = fc.getSelectedFile();
+                // do file processing here
+                try {
+                    byte[] pubB = Files.readAllBytes(Path.of(f.toURI()));
+                    activePubRing = ThingPGP.decodePublicRing(pubB);
+                    out.println(activePubRing.getPublicKey().getKeyID());
+                    fc.setVisible(false);
+                    // update pub key list and close list dialog
+                    // @TODO update key list
+                    d.setVisible(false);
+                } catch (IOException ex) {
+                    throw new RuntimeException(ex);
+                }
+            } else {
+                fc.setVisible(false);
+            }
         });
         d.add(uploadPubKey, gc);
 
