@@ -18,22 +18,24 @@ import org.json.JSONObject;
 import org.mintaka5.crypto.ThingPGP;
 import org.mintaka5.model.KeyRepo;
 import org.mintaka5.ui.component.PubKeyListRenderer;
+import org.mintaka5.util.Utilities;
 
 import javax.swing.*;
-import javax.swing.event.ListSelectionEvent;
-import javax.swing.event.ListSelectionListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.ByteArrayOutputStream;
-import java.io.FileFilter;
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.Security;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.Comparator;
@@ -104,6 +106,9 @@ public class PGPWindow2 extends JFrame {
             KeyRepo repo = setCurrentKeys();
             if(repo != null) {
                 pubKeyHashTxt.setText(repo.getHash());
+                pubKeyDateTxt.setText(DateTimeFormatter.ofPattern("YYYY-MM-dd HH:mm")
+                        .withZone(ZoneId.systemDefault())
+                        .format(Instant.ofEpochMilli(repo.getTimestamp())));
             }
         }
     }
@@ -113,15 +118,14 @@ public class PGPWindow2 extends JFrame {
         List<KeyRepo> res = IteratorUtils.toList(c.iterator());
         // grab latest key and set for session use
         KeyRepo latest = res.stream()
-                .filter((f) -> f.getType() == KEY_TYPE_PUB).min(Collections.reverseOrder(Comparator.comparingLong((a) -> a.getTimestamp()))).orElse(null);
+                .filter((f) -> f.getType() == KEY_TYPE_PUB).min(Collections.reverseOrder(Comparator.comparingLong(KeyRepo::getTimestamp))).orElse(null);
 
         /*
         so we have it handy for later (repo needs to
         be converted at this point for using the pgppubkeyring instance)
         */
         if(latest != null) {
-            PGPPublicKeyRing ppkr = ThingPGP.decodePublicRing(latest.getKey());
-            activePubRing = ppkr;
+            activePubRing = ThingPGP.decodePublicRing(latest.getKey());
         }
 
         return latest;
@@ -237,6 +241,32 @@ public class PGPWindow2 extends JFrame {
             encMsgTxt.setText("");
         });
         tBar.add(clearEncMsgBtn);
+
+        JButton genPubKeyBtn = new JButton("gen pub =)");
+        genPubKeyBtn.addActionListener((e) -> {
+            ((JButton) e.getSource()).setEnabled(false);
+            if(activePubRing != null) {
+                Path pubP = Paths.get("C:/Users/chris/Desktop/pub-dump/pub-" + Utilities.crc32(Instant.now().toEpochMilli() + ".asc"));
+                if(!Files.exists(pubP)) {
+                    try {
+                        Files.createDirectories(pubP.getParent());
+                        Files.createFile(pubP);
+                    } catch (IOException ex) {
+                        throw new RuntimeException(ex);
+                    }
+                }
+
+                try {
+                    ThingPGP.exportPublicKey(activePubRing, pubP.toFile(), true);
+                } catch (IOException ex) {
+                    throw new RuntimeException("failed to export public key to " + pubP + ". " + ex.getMessage());
+                } finally {
+                    ((JButton) e.getSource()).setEnabled(true);
+                }
+            }
+        });
+        tBar.add(genPubKeyBtn);
+
         p.add(tBar, gc);
 
         return p;
@@ -262,7 +292,7 @@ public class PGPWindow2 extends JFrame {
         keyRepo.find(
                 ObjectFilters.eq(KeyRepo.JSON_TYPE_NAME, KEY_TYPE_PUB),
                 FindOptions.sort(KeyRepo.JSON_TIMESTAMP_NAME, SortOrder.Descending)
-        ).forEach((k) -> model.addElement(k));
+        ).forEach(model::addElement);
 
         pubsList = new JList<KeyRepo>(model);
         JScrollPane pubPane = new JScrollPane(pubsList);
@@ -271,7 +301,7 @@ public class PGPWindow2 extends JFrame {
             public void mouseClicked(MouseEvent e) {
                 if(e.getClickCount() == 2) {
                     // double clicked
-                    int index = ((JList) e.getSource()).locationToIndex(e.getPoint());
+                    int index = ((JList<?>) e.getSource()).locationToIndex(e.getPoint());
                 }
             }
         });

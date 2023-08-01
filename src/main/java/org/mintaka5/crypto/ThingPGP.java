@@ -142,10 +142,12 @@ public class ThingPGP {
         if(armored) {
             ArmoredOutputStream aos = new ArmoredOutputStream(new BufferedOutputStream(new FileOutputStream(out)));
             ring.encode(aos);
+            aos.flush();
             aos.close();
         } else {
             FileOutputStream fos = new FileOutputStream(out);
             ring.encode(fos);
+            fos.flush();
             fos.close();
         }
     }

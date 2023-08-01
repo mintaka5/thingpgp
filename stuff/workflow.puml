@@ -1,7 +1,15 @@
 @startuml
-(open app) --> (has a key?)
-(has a key?) --> (generate one) : no
-(has a key?) --> (enter password) : yes
-(enter password) --> (prepare components) : success
-(enter password) --> (enter password) : failure
+header "©2023 Chris Walsh <chris.is.rad@pm.me>"
+title "PGPThing console app workflow"
+start
+repeat
+:get keys;
+if(key exists?) then (yes)
+    :set key;
+    :encrypt;
+    stop
+else (no)
+    :gen key;
+endif
+footer "page 1/1"
 @enduml
