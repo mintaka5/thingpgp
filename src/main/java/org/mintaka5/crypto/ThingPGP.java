@@ -20,6 +20,7 @@ import org.bouncycastle.util.io.Streams;
 import java.io.*;
 import java.math.BigInteger;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.util.Date;
 import java.util.Iterator;
@@ -35,7 +36,7 @@ public class ThingPGP {
      * @param out file that will store the secret key
      * @param armored whether to output file as ASCII armor or not
      */
-    public static void exportSecretKey(PGPSecretKeyRing ring, File out, boolean armored) throws IOException {
+    public static Path exportSecretKey(PGPSecretKeyRing ring, File out, boolean armored) throws IOException {
         if(armored) {
             ArmoredOutputStream aos = new ArmoredOutputStream(new BufferedOutputStream(new FileOutputStream(out)));
             ring.encode(aos);
@@ -45,6 +46,8 @@ public class ThingPGP {
             ring.encode(fos);
             fos.close();
         }
+
+        return Path.of(out.toURI());
     }
 
     /**
@@ -138,7 +141,7 @@ public class ThingPGP {
      * @param out output file
      * @param armored ASCII armored or not?
      */
-    public static void exportPublicKey(PGPPublicKeyRing ring, File out, boolean armored) throws IOException {
+    public static Path exportPublicKey(PGPPublicKeyRing ring, File out, boolean armored) throws IOException {
         if(armored) {
             ArmoredOutputStream aos = new ArmoredOutputStream(new BufferedOutputStream(new FileOutputStream(out)));
             ring.encode(aos);
@@ -150,6 +153,8 @@ public class ThingPGP {
             fos.flush();
             fos.close();
         }
+
+        return Path.of(out.toURI());
     }
 
     /**
