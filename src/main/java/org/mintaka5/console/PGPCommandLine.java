@@ -18,43 +18,44 @@ public class PGPCommandLine {
     public PGPCommandLine(String[] args) {
         Option genOpt = Option.builder("g")
                 .longOpt("generate")
-                .desc("generate a new key")
+                .desc("generate a new key. usage: thingpgp -g | --generate <identity> <password> <path/to/save/directory>")
                 .required(false)
                 .numberOfArgs(3)
                 .hasArgs()
                 .build();
+
         Option encOpt = Option.builder("e")
                 .longOpt("encrypt")
                 .desc("encrypt a message, file, or in general byte data.")
                 .numberOfArgs(2)
+                .required(false)
                 .hasArgs()
+                .build();
+
+        Option helpOpt = Option.builder("h").longOpt("help")
                 .build();
 
         Options opts = new Options();
         opts.addOption(genOpt);
         opts.addOption(encOpt);
+        opts.addOption(helpOpt);
 
         CommandLineParser parser = new DefaultParser();
         try {
             CommandLine line = parser.parse(opts, args);
 
             HelpFormatter helpF = new HelpFormatter();
-
-            if(line.getOptions().length == 0) {
-                helpF.printHelp("pgpcmd", opts);
+            if(line.hasOption("h")) {
+                helpF.printHelp("thingpgp", "ThingPGP\n\n", opts, "\ncontact: chris.is.rad@pm.me");
             }
 
-            /**
-             * @TODO i want a switch!
-             */
+            if (line.hasOption("g") && line.getOptionValues("g").length == 3) {
+                String[] argsA = line.getOptionValues("g");
+                handleGen(argsA[0].trim(), argsA[1].trim().toCharArray(), Paths.get(argsA[2].trim()));
+            }
 
-            if(line.hasOption("g")) {
-                if(line.getOptionValues("g").length == 3) {
-                    String[] argsA = line.getOptionValues("g");
-                    handleGen(argsA[0].trim(), argsA[1].trim().toCharArray(), Paths.get(argsA[2].trim()));
-                } else {
-                    helpF.printHelp("pgpcmd", opts);
-                }
+            if(line.hasOption("e") && line.getOptionValues("e").length == 2) {
+                
             }
         } catch (ParseException e) {
             out.println("parsing failed. reason: " + e.getMessage());
@@ -62,7 +63,8 @@ public class PGPCommandLine {
     }
 
     private void handleGen(String ident, char[] passwd, Path p) {
-        if(!Files.exists(p)) {
+        out.println("key generating happening...");
+        if (!Files.exists(p)) {
             try {
                 Files.createDirectories(p);
             } catch (IOException e) {
