@@ -18,6 +18,9 @@ import org.json.JSONObject;
 import org.mintaka5.crypto.ThingPGP;
 import org.mintaka5.model.KeyRepo;
 import org.mintaka5.ui.component.PubKeyListRenderer;
+import org.mintaka5.ui.listener.GenKeyButtonListener;
+import org.mintaka5.ui.listener.IdentKeyListener;
+import org.mintaka5.ui.listener.PasswordKeyListener;
 import org.mintaka5.util.Utilities;
 
 import javax.swing.*;
@@ -44,31 +47,31 @@ import java.util.List;
 import static java.lang.System.out;
 
 public class PGPWindow2 extends JFrame {
-    private static final String SHOW_GEN_PANEL = String.valueOf(0);
+    private static final Path STORE_PATH = Path.of(System.getProperty("user.home"), ".archivr", "store.db");
+    public  static final String SHOW_GEN_PANEL = String.valueOf(0);
     private static final Insets DEFAULT_GC_INSETS = new Insets(10, 10, 10, 10);
     private static final int KEY_TYPE_PUB = 1;
     private static final int KEY_TYPE_SEC = 0;
+    public static final String SHOW_MAIN_PANEL = String.valueOf(1);
 
-    private static final String SHOW_MAIN_PANEL = String.valueOf(1);
     private CardLayout rootLayout;
     private JPanel rootPanel;
     private JTextField identTxt;
     private JPasswordField passwdTxt;
     private JButton genKeyBtn;
-    private Thread genThread;
-    private PGPKeyRingGenerator keyRing;
-    private static final Path STORE_PATH = Path.of(System.getProperty("user.home"), ".archivr", "store.db");
     private JTabbedPane messengerTabs;
     private JTextArea encMsgTxt;
     private JButton loadEncKeyBtn;
     private JButton newKeyBtn;
-    private Nitrite db;
-    private ObjectRepository<KeyRepo> keyRepo;
-    private PGPPublicKeyRing activePubRing = null;
     private JTextField pubKeyHashTxt;
     private JList<KeyRepo> pubsList;
     private JButton uploadPubKey;
     private JTextField pubKeyDateTxt;
+
+    private Nitrite db;
+    private ObjectRepository<KeyRepo> keyRepo;
+    private PGPPublicKeyRing activePubRing = null;
+    private PGPKeyRingGenerator keyRing;
 
     public PGPWindow2() throws IOException {
         super("pretty good secrets");
@@ -330,6 +333,7 @@ public class PGPWindow2 extends JFrame {
                     fc.setVisible(false);
                     // update pub key list and close list dialog
                     // @TODO update key list
+
                     d.setVisible(false);
                 } catch (IOException ex) {
                     throw new RuntimeException(ex);
@@ -403,7 +407,7 @@ public class PGPWindow2 extends JFrame {
         gc.fill = GridBagConstraints.HORIZONTAL;
         gc.weightx = 1;
         identTxt = new JTextField();
-        identTxt.addKeyListener(new IdentKeyListener());
+        identTxt.addKeyListener(new IdentKeyListener(this));
         p.add(identTxt, gc);
 
         gc.gridx = 0;
@@ -417,7 +421,7 @@ public class PGPWindow2 extends JFrame {
         gc.weightx = 1;
         gc.fill = GridBagConstraints.HORIZONTAL;
         passwdTxt = new JPasswordField();
-        passwdTxt.addKeyListener(new PasswordKeyListener());
+        passwdTxt.addKeyListener(new PasswordKeyListener(this));
         p.add(passwdTxt, gc);
 
         gc.gridx = 0;
@@ -428,7 +432,7 @@ public class PGPWindow2 extends JFrame {
         gc.anchor = GridBagConstraints.EAST;
         genKeyBtn = new JButton("generate");
         genKeyBtn.setEnabled(false);
-        genKeyBtn.addActionListener(new GenKeyButtonListener());
+        genKeyBtn.addActionListener(new GenKeyButtonListener(this));
         p.add(genKeyBtn, gc);
 
         rootPanel.add(p, SHOW_GEN_PANEL);
@@ -473,85 +477,6 @@ public class PGPWindow2 extends JFrame {
         new PGPWindow2();
     }
 
-    private class IdentKeyListener implements KeyListener {
-        @Override
-        public void keyTyped(KeyEvent e) {
-
-        }
-
-        @Override
-        public void keyPressed(KeyEvent e) {
-
-        }
-
-        @Override
-        public void keyReleased(KeyEvent e) {
-            genKeyBtn.setEnabled((passwdTxt.getPassword().length > 0 && !identTxt.getText().isEmpty()));
-        }
-    }
-
-    private class PasswordKeyListener implements KeyListener {
-        @Override
-        public void keyTyped(KeyEvent e) {
-
-        }
-
-        @Override
-        public void keyPressed(KeyEvent e) {
-
-        }
-
-        @Override
-        public void keyReleased(KeyEvent e) {
-            genKeyBtn.setEnabled((passwdTxt.getPassword().length > 0 && !identTxt.getText().isEmpty()));
-        }
-    }
-
-    private class GenKeyButtonListener implements ActionListener {
-        @Override
-        public void actionPerformed(ActionEvent e) {
-            genThread = new GenKeyThread();
-            genThread.start();
-        }
-    }
-
-    private class GenKeyThread extends Thread {
-        @Override
-        public void run() {
-            String ident = identTxt.getText().trim();
-            char[] passwd = passwdTxt.getPassword();
-
-            out.println("starting key generation...");
-            identTxt.setText("");
-            passwdTxt.setText("");
-            genKeyBtn.setEnabled(false);
-            genKeyBtn.setText("generating...");
-            try {
-                keyRing = ThingPGP.generateKeyRing(ident, passwd);
-            } catch (PGPException e) {
-                throw new RuntimeException("generation of keyrings failed. " + e.getMessage());
-            }
-
-            out.println("key generation has completed.");
-            genKeyBtn.setText("generate");
-            // go back to main panel
-            rootLayout.show(rootPanel, SHOW_MAIN_PANEL);
-
-            // store new keys in DB
-            try {
-                storePublicKey(keyRing);
-            } catch (NoSuchAlgorithmException | IOException e) {
-                throw new RuntimeException(e);
-            }
-
-            try {
-                genThread.join();
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
-        }
-    }
-
     private long storeKeys(PGPKeyRingGenerator kr) throws NoSuchAlgorithmException, IOException {
         long pubId = storePublicKey(kr);
         storeSecretKey(kr, pubId);
@@ -587,7 +512,7 @@ public class PGPWindow2 extends JFrame {
 
     }
 
-    private long storePublicKey(PGPKeyRingGenerator kr) throws IOException, NoSuchAlgorithmException {
+    public long storePublicKey(PGPKeyRingGenerator kr) throws IOException, NoSuchAlgorithmException {
         //JSONObject j = new JSONObject();
         ByteArrayOutputStream pubBos = new ByteArrayOutputStream();
         PGPPublicKeyRing pubRing = kr.generatePublicKeyRing();
@@ -627,5 +552,61 @@ public class PGPWindow2 extends JFrame {
         j.put(JSON_PUBID_NAME, pubId);*/
 
         return pubId;
+    }
+
+    public CardLayout getRootLayout() {
+        return rootLayout;
+    }
+
+    public JPanel getRootPanel() {
+        return rootPanel;
+    }
+
+    public JTextField getIdentTxt() {
+        return identTxt;
+    }
+
+    public JPasswordField getPasswdTxt() {
+        return passwdTxt;
+    }
+
+    public JButton getGenKeyBtn() {
+        return genKeyBtn;
+    }
+
+    public JTabbedPane getMessengerTabs() {
+        return messengerTabs;
+    }
+
+    public JTextArea getEncMsgTxt() {
+        return encMsgTxt;
+    }
+
+    public JButton getLoadEncKeyBtn() {
+        return loadEncKeyBtn;
+    }
+
+    public JButton getNewKeyBtn() {
+        return newKeyBtn;
+    }
+
+    public JTextField getPubKeyHashTxt() {
+        return pubKeyHashTxt;
+    }
+
+    public JButton getUploadPubKey() {
+        return uploadPubKey;
+    }
+
+    public JTextField getPubKeyDateTxt() {
+        return pubKeyDateTxt;
+    }
+
+    public PGPKeyRingGenerator getKeyRing() {
+        return keyRing;
+    }
+
+    public void setKeyRing(PGPKeyRingGenerator keyRing) {
+        this.keyRing = keyRing;
     }
 }
