@@ -322,13 +322,13 @@ public class PGPWindow extends JFrame {
 
             @Override
             public void keyReleased(KeyEvent e) {
-                encBtn.setEnabled((msgTxt.getText().length() > 0));
+                encBtn.setEnabled((!msgTxt.getText().isEmpty()));
             }
         });
         msgTxt.getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) {
-                if(msgTxt.getText().length() > 0) {
+                if(!msgTxt.getText().isEmpty()) {
                     msgTxt.setEnabled(true);
                     encBtn.setEnabled(true);
                 }

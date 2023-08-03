@@ -1,24 +1,39 @@
 package org.mintaka5.console;
 
 import org.apache.commons.cli.*;
+import org.apache.commons.codec.binary.Hex;
+import org.bouncycastle.jcajce.provider.digest.SHA256;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.openpgp.PGPException;
 import org.bouncycastle.openpgp.PGPKeyRingGenerator;
+import org.bouncycastle.openpgp.PGPPublicKey;
+import org.bouncycastle.openpgp.PGPPublicKeyRing;
 import org.mintaka5.crypto.ThingPGP;
+import org.mintaka5.util.Utilities;
 
-import java.io.IOException;
+import java.io.*;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.Security;
 import java.util.Arrays;
+import java.util.Base64;
 
 import static java.lang.System.out;
 
 public class PGPCommandLine {
 
     public PGPCommandLine(String[] args) {
+        Security.addProvider(new BouncyCastleProvider());
+
         Option genOpt = Option.builder("g")
                 .longOpt("generate")
-                .desc("generate a new key. usage: thingpgp -g | --generate <identity> <password> <path/to/save/directory>")
+                .desc("generate a new key. "
+                        .concat("usage: thingpgp -g | --generate <identity> <password> <path/to/save/directory>"))
                 .required(false)
                 .numberOfArgs(3)
                 .hasArgs()
@@ -26,7 +41,8 @@ public class PGPCommandLine {
 
         Option encOpt = Option.builder("e")
                 .longOpt("encrypt")
-                .desc("encrypt a message, file, or in general byte data.")
+                .desc("encrypt a message, file, or in general byte data. "
+                        .concat("usage: thingpgp -e"))
                 .numberOfArgs(2)
                 .required(false)
                 .hasArgs()
@@ -55,10 +71,79 @@ public class PGPCommandLine {
             }
 
             if(line.hasOption("e") && line.getOptionValues("e").length == 2) {
-                
+                String[] argsB = line.getOptionValues("e");
+                /**
+                 * grab input strings from command line argument directives.
+                 */
+                String inputS = (String) argsB[1].trim().replaceAll("\\\\", "/");
+                String pubS = (String) argsB[0].trim().replaceAll("\\\\", "/");
+
+                PGPPublicKey pubKey = null;
+                /**
+                 * check to see if the user input provided for argument index 0
+                 * is a valid path to an armored public key file.
+                 */
+                if(Utilities.isValidPath(pubS)) {
+                    // a valid file was provided
+                    PGPPublicKeyRing pubRing = ThingPGP.importPublicKeyring(Paths.get(pubS).toFile());
+                    pubKey = ThingPGP.getEncryptionKey(pubRing);
+                }
+
+                // if pub key was successfully pulled from file, go...
+                if(pubKey != null) {
+                    /**
+                     * if the input of argument index 1 is a valid file path
+                     * then we are dealing with a file obviously, or it's something
+                     * else, but for now that something else is a string.
+                     */
+                    final String tmpOutS = "%s encryption:\n\nsignature: %s\n\nencrypted message\n%s\n";
+                    if (Utilities.isValidPath(inputS)) {
+                        // we got a file. handle it
+                        byte[] encMsg = handleFileEncryption(pubKey, Files.readAllBytes(Paths.get(inputS)));
+                        byte[] armoredMsg = ThingPGP.makeArmoredMessage(encMsg);
+                        out.printf(tmpOutS,
+                                "file",
+                                Hex.encodeHexString(MessageDigest.getInstance("SHA-256").digest(armoredMsg)),
+                                new String(armoredMsg)
+                        );
+                    } else {
+                        // it's a random string of data or something else spooky.
+                        byte[] encStr = handleStringEncryption(pubKey, inputS.getBytes());
+                        byte[] armoredStr = ThingPGP.makeArmoredMessage(encStr);
+                        out.printf(tmpOutS,
+                                "string",
+                                Hex.encodeHexString(MessageDigest.getInstance("SHA-256").digest(armoredStr)),
+                                new String(armoredStr)
+                        );
+                    }
+                }
             }
         } catch (ParseException e) {
             out.println("parsing failed. reason: " + e.getMessage());
+        } catch (IOException e) {
+            throw new RuntimeException("failed to import public key ring. " + e.getMessage());
+        } catch (PGPException e) {
+            throw new RuntimeException("failed to acquire public key from key ring. " + e.getMessage());
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private byte[] handleStringEncryption(PGPPublicKey pub, byte[] b) {
+        try {
+            return ThingPGP.encrypt(pub, b);
+        } catch (PGPException e) {
+            throw new RuntimeException("failed to encrypt data. " + e.getMessage());
+        } catch (IOException e) {
+            throw new RuntimeException("invalid byte data was provided. " + e);
+        }
+    }
+
+    private byte[] handleFileEncryption(PGPPublicKey pk, byte[] d) {
+        try {
+            return ThingPGP.encrypt(pk, d);
+        } catch (IOException | PGPException e) {
+            throw new RuntimeException(e);
         }
     }
 

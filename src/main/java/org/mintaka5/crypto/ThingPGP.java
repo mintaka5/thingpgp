@@ -310,4 +310,14 @@ public class ThingPGP {
 
         return (PGPPublicKeyRing) f.nextObject();
     }
+
+    public static byte[] makeArmoredMessage(byte[] data) throws IOException {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        ArmoredOutputStream aos = new ArmoredOutputStream(bos);
+        aos.write(data);
+        aos.flush();
+        aos.close();
+
+        return bos.toByteArray();
+    }
 }

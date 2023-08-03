@@ -1,9 +1,12 @@
 package org.mintaka5.util;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Paths;
 import java.util.zip.CRC32;
 
 public class Utilities {
@@ -38,5 +41,17 @@ public class Utilities {
         }
 
         return hashValue;
+    }
+
+    public static boolean isValidPath(String p) {
+        File f = null;
+
+        try {
+            f = new File(p);
+        } catch(NullPointerException ex) {
+            return false;
+        }
+
+        return f.exists();
     }
 }
