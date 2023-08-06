@@ -2,17 +2,12 @@ package org.mintaka5.console;
 
 import org.apache.commons.cli.*;
 import org.apache.commons.codec.binary.Hex;
-import org.bouncycastle.jcajce.provider.digest.SHA256;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.bouncycastle.openpgp.PGPException;
-import org.bouncycastle.openpgp.PGPKeyRingGenerator;
-import org.bouncycastle.openpgp.PGPPublicKey;
-import org.bouncycastle.openpgp.PGPPublicKeyRing;
+import org.bouncycastle.openpgp.*;
 import org.mintaka5.crypto.ThingPGP;
 import org.mintaka5.util.Utilities;
 
 import java.io.*;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,8 +15,7 @@ import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.Security;
-import java.util.Arrays;
-import java.util.Base64;
+import java.util.*;
 
 import static java.lang.System.out;
 
@@ -30,44 +24,35 @@ public class PGPCommandLine {
     public PGPCommandLine(String[] args) {
         Security.addProvider(new BouncyCastleProvider());
 
-        Option genOpt = Option.builder("g")
-                .longOpt("generate")
-                .desc("generate a new key. "
-                        .concat("usage: thingpgp -g | --generate <identity> <password> <path/to/save/directory>"))
-                .required(false)
-                .numberOfArgs(3)
-                .hasArgs()
-                .build();
+        Options options = setupOptions();
 
-        Option encOpt = Option.builder("e")
-                .longOpt("encrypt")
-                .desc("encrypt a message, file, or in general byte data. "
-                        .concat("usage: thingpgp -e"))
-                .numberOfArgs(2)
-                .required(false)
-                .hasArgs()
-                .build();
+        parseCommands(options, args);
+    }
 
-        Option helpOpt = Option.builder("h").longOpt("help")
-                .build();
-
-        Options opts = new Options();
-        opts.addOption(genOpt);
-        opts.addOption(encOpt);
-        opts.addOption(helpOpt);
-
+    private void parseCommands(Options options, String[] args) {
         CommandLineParser parser = new DefaultParser();
         try {
-            CommandLine line = parser.parse(opts, args);
+            CommandLine line = parser.parse(options, args);
 
             HelpFormatter helpF = new HelpFormatter();
+
+            /**
+             * @TODO
+             * condense this into a method or class TOO MUCH TUNA!!!
+             */
+
             if(line.hasOption("h")) {
-                helpF.printHelp("thingpgp", "ThingPGP\n\n", opts, "\ncontact: chris.is.rad@pm.me");
+                helpF.printHelp("thingpgp", "ThingPGP\n\n", options, "\ncontact: chris.is.rad@pm.me");
             }
 
             if (line.hasOption("g") && line.getOptionValues("g").length == 3) {
                 String[] argsA = line.getOptionValues("g");
                 handleGen(argsA[0].trim(), argsA[1].trim().toCharArray(), Paths.get(argsA[2].trim()));
+            }
+
+            if(line.hasOption("d") && line.getOptionValues("d").length == 3) {
+                String[] argsB = line.getOptionValues("d");
+                handleDecryption(argsB);
             }
 
             if(line.hasOption("e") && line.getOptionValues("e").length == 2) {
@@ -127,6 +112,75 @@ public class PGPCommandLine {
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private void handleDecryption(String[] args) {
+        /**
+         * what we need is private key from secret keyring,
+         * the encrypted message, and password
+         */
+        String secKey = args[0].trim().replaceAll("\\\\", "/");
+        String encMsg = args[1].trim();
+        String passwd = args[2].trim();
+
+        /**
+         * check args 0 and 1 to see if they are files or not.
+         * user can supply an armored ascii file or a base64 string
+         * @TODO make a way to export these
+         */
+        PGPSecretKeyRing skRing = null;
+        PGPPrivateKey privKey = null;
+
+        if(Utilities.isValidPath(secKey)) { // we've got a file
+            try {
+                skRing = ThingPGP.importSecretKeyring(Paths.get(secKey).toFile());
+                privKey = ThingPGP.getDecryptionKey(skRing, skRing.getPublicKey().getKeyID(), passwd);
+
+            } catch (IOException | PGPException e) {
+                throw new RuntimeException("failed to import secret key ring. check that file is a valid armored ascii file. " + e.getMessage());
+            }
+        }
+    }
+
+    private Options setupOptions() {
+        HashMap<String, Option> o = new HashMap<>();
+
+        Option genOpt = Option.builder("g")
+                .longOpt("generate")
+                .desc("generate a new key. "
+                        .concat("usage: thingpgp -g | --generate <identity> <password> <path/to/save/directory>"))
+                .required(false)
+                .numberOfArgs(3)
+                .hasArgs()
+                .build();
+        o.put("GEN", genOpt);
+
+        Option encOpt = Option.builder("e")
+                .longOpt("encrypt")
+                .desc("encrypt a message, file, or in general byte data. "
+                        .concat("usage: thingpgp -e"))
+                .numberOfArgs(2)
+                .required(false)
+                .hasArgs()
+                .build();
+        o.put("ENC", encOpt);
+
+        Option decOpt = Option.builder("d")
+                .longOpt("decrypt")
+                .desc("decrypt a message, file, or in general byte data. ".concat("usages: thingpgp -d"))
+                .hasArgs()
+                .numberOfArgs(3)
+                .build();
+        o.put("DEC", decOpt);
+
+        Option helpOpt = Option.builder("h").longOpt("help")
+                .build();
+        o.put("HELP", helpOpt);
+
+        Options opts = new Options();
+        o.forEach((k, v) -> opts.addOption(v));
+
+        return opts;
     }
 
     private byte[] handleStringEncryption(PGPPublicKey pub, byte[] b) {
