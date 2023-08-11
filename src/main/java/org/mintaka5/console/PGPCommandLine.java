@@ -120,7 +120,7 @@ public class PGPCommandLine {
          * the encrypted message, and password
          */
         String secKey = args[0].trim().replaceAll("\\\\", "/");
-        String encMsg = args[1].trim();
+        String encMsg = args[1].trim().replaceAll("\\\\", "/");
         String passwd = args[2].trim();
 
         /**

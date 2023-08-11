@@ -5,9 +5,10 @@ import org.mintaka5.ui.PGPWindow2;
 
 import java.io.IOException;
 import java.security.Security;
+import java.util.concurrent.ExecutionException;
 
 public class Main {
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
         Security.addProvider(new BouncyCastleProvider());
 
         // new PGPWindow();

@@ -16,6 +16,7 @@ import org.dizitart.no2.objects.ObjectRepository;
 import org.dizitart.no2.objects.filters.ObjectFilters;
 import org.json.JSONObject;
 import org.mintaka5.crypto.ThingPGP;
+import org.mintaka5.model.EncryptedMessageRepo;
 import org.mintaka5.model.KeyRepo;
 import org.mintaka5.ui.component.PubKeyListRenderer;
 import org.mintaka5.ui.listener.GenKeyButtonListener;
@@ -30,6 +31,7 @@ import java.awt.event.*;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -43,6 +45,7 @@ import java.util.Base64;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 import static java.lang.System.out;
 
@@ -72,8 +75,10 @@ public class PGPWindow2 extends JFrame {
     private ObjectRepository<KeyRepo> keyRepo;
     private PGPPublicKeyRing activePubRing = null;
     private PGPKeyRingGenerator keyRing;
+    private JButton encMsgBtn;
+    private ObjectRepository<EncryptedMessageRepo> msgRepo;
 
-    public PGPWindow2() throws IOException {
+    public PGPWindow2() throws IOException, ExecutionException, InterruptedException {
         super("pretty good secrets");
 
         initStorage();
@@ -92,6 +97,18 @@ public class PGPWindow2 extends JFrame {
             //setState(JFrame.ICONIFIED);
         });
 
+        // a loop check for things need to be activated or
+        // disabled based on active info.
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                while(true) {
+                    getEncMsgTxt().setEnabled((activePubRing != null));
+                }
+            }
+        };
+        worker.execute();
+
         /*SwingWorker worker1 = new SwingWorker() {
             @Override
             protected Object doInBackground() throws Exception {
@@ -106,7 +123,7 @@ public class PGPWindow2 extends JFrame {
     private void postBuild() throws IOException {
         if(keyRepo.find().size() > 0) {
             rootLayout.show(rootPanel, SHOW_MAIN_PANEL);
-            KeyRepo repo = setCurrentKeys();
+            KeyRepo repo = setMostCurrentKey();
             if(repo != null) {
                 pubKeyHashTxt.setText(repo.getHash());
                 pubKeyDateTxt.setText(DateTimeFormatter.ofPattern("YYYY-MM-dd HH:mm")
@@ -116,7 +133,7 @@ public class PGPWindow2 extends JFrame {
         }
     }
 
-    private KeyRepo setCurrentKeys() throws IOException {
+    private KeyRepo setMostCurrentKey() throws IOException {
         Cursor<KeyRepo> c = keyRepo.find();
         List<KeyRepo> res = IteratorUtils.toList(c.iterator());
         // grab latest key and set for session use
@@ -142,6 +159,7 @@ public class PGPWindow2 extends JFrame {
         db = Nitrite.builder().filePath(STORE_PATH.toFile()).openOrCreate();
 
         keyRepo = db.getRepository(KeyRepo.class);
+        msgRepo = db.getRepository(EncryptedMessageRepo.class);
         keyRepo.register(new ChangeListener() {
             @Override
             public void onChange(ChangeInfo changeInfo) {
@@ -207,11 +225,39 @@ public class PGPWindow2 extends JFrame {
         gc.fill = GridBagConstraints.BOTH;
         gc.anchor = GridBagConstraints.CENTER;
         encMsgTxt = new JTextArea();
+        JScrollPane encMsgPane = new JScrollPane(encMsgTxt);
         encMsgTxt.setEnabled(false);
-        p.add(encMsgTxt, gc);
+        encMsgTxt.setLineWrap(true);
+        encMsgTxt.setWrapStyleWord(true);
+        encMsgTxt.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyReleased(KeyEvent e) {
+                getEncMsgBtn().setEnabled(((JTextArea) e.getSource()).getText().length() > 1);
+            }
+        });
+        p.add(encMsgPane, gc);
 
         gc.gridx = 0;
         gc.gridy = 2;
+        gc.weightx = 0;
+        gc.weighty = 0;
+        gc.fill = GridBagConstraints.NONE;
+        gc.anchor = GridBagConstraints.EAST;
+        encMsgBtn = new JButton("encrypt");
+        encMsgBtn.setEnabled(false);
+        encMsgBtn.addActionListener((e) -> {
+            try {
+                handleEncryption();
+                getEncMsgTxt().setText("");
+                getEncMsgBtn().setEnabled(false);
+            } catch (PGPException | IOException | NoSuchAlgorithmException ex) {
+                throw new RuntimeException(ex);
+            }
+        });
+        p.add(encMsgBtn, gc);
+
+        gc.gridx = 0;
+        gc.gridy = 3;
         gc.weightx = 1;
         gc.weighty = 0;
         gc.fill = GridBagConstraints.BOTH;
@@ -275,6 +321,25 @@ public class PGPWindow2 extends JFrame {
         return p;
     }
 
+    private void handleEncryption() throws PGPException, IOException, NoSuchAlgorithmException {
+        String c = getEncMsgTxt().getText().trim();
+        PGPPublicKey pubKey = ThingPGP.getEncryptionKey(activePubRing);
+        byte[] enc = ThingPGP.encrypt(pubKey, c.getBytes(StandardCharsets.UTF_8));
+
+        byte[] armor = ThingPGP.makeArmoredMessage(enc);
+        storeEncryptedMessage(armor);
+    }
+
+    private void storeEncryptedMessage(byte[] armor) throws NoSuchAlgorithmException {
+        EncryptedMessageRepo repo = new EncryptedMessageRepo();
+        byte[] msgHash = MessageDigest.getInstance("SHA-256").digest(armor);
+        repo.setHash(Hex.toHexString(msgHash));
+        repo.setTimestamp(Instant.now().toEpochMilli());
+        repo.setMessage(armor);
+
+        msgRepo.insert(repo);
+    }
+
     private JDialog buildPubListDialog() {
         JDialog d = new JDialog(this, true);
         d.setTitle("my encryption keys");
@@ -303,8 +368,20 @@ public class PGPWindow2 extends JFrame {
             @Override
             public void mouseClicked(MouseEvent e) {
                 if(e.getClickCount() == 2) {
-                    // double clicked
-                    int index = ((JList<?>) e.getSource()).locationToIndex(e.getPoint());
+                    // double-clicked
+                    KeyRepo selection = (KeyRepo) ((JList<?>) e.getSource()).getSelectedValue();
+                    try {
+                        activePubRing = ThingPGP.decodePublicRing(selection.getKey());
+                        pubKeyHashTxt.setText(selection.getHash());
+                        pubKeyDateTxt.setText(DateTimeFormatter.ofPattern("YYYY-MM-dd HH:mm")
+                                .withZone(ZoneId.systemDefault())
+                                .format(Instant.ofEpochMilli(selection.getTimestamp())));
+                        encMsgTxt.setEnabled(true);
+                        d.setVisible(false);
+                    } catch (IOException ex) {
+                        encMsgTxt.setEnabled(false);
+                        throw new RuntimeException("failed to set active public key ring. " + ex.getMessage());
+                    }
                 }
             }
         });
@@ -424,12 +501,22 @@ public class PGPWindow2 extends JFrame {
         passwdTxt.addKeyListener(new PasswordKeyListener(this));
         p.add(passwdTxt, gc);
 
+
         gc.gridx = 0;
         gc.gridy = 2;
         gc.weightx = 0;
         gc.fill = GridBagConstraints.NONE;
-        gc.gridwidth = 2;
         gc.anchor = GridBagConstraints.EAST;
+        JButton cancelGenBtn = new JButton("cancel");
+        cancelGenBtn.addActionListener(e -> {
+            rootLayout.show(rootPanel, SHOW_MAIN_PANEL);
+        });
+        p.add(cancelGenBtn, gc);
+
+        gc.gridx = 1;
+        gc.gridy = 2;
+        gc.weightx = 0;
+        gc.fill = GridBagConstraints.NONE;
         genKeyBtn = new JButton("generate");
         genKeyBtn.setEnabled(false);
         genKeyBtn.addActionListener(new GenKeyButtonListener(this));
@@ -455,6 +542,9 @@ public class PGPWindow2 extends JFrame {
             throw new RuntimeException(e);
         }
 
+        // because for some stupid-ass reason Swing doesn't set look and feel fo JTextarea.
+        UIManager.getDefaults().put("TextArea.font", UIManager.getFont("TextField.font"));
+
         setSize(960, 720);
         setMinimumSize(getSize());
         setResizable(true);
@@ -471,7 +561,7 @@ public class PGPWindow2 extends JFrame {
         return rootPanel;
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
         Security.addProvider(new BouncyCastleProvider());
 
         new PGPWindow2();
@@ -534,7 +624,7 @@ public class PGPWindow2 extends JFrame {
         newKey.setTimestamp(ts);
         newKey.setPubId(pubId);
         WriteResult res = keyRepo.insert(newKey);
-        res.forEach((i) -> out.println(i.toString()));
+        // res.forEach((i) -> out.println(i.toString()));
 
         /*Document doc = Document
                 .createDocument(KeyRepo.JSON_HASH_NAME, Hex.toHexString(pubHash))
@@ -608,5 +698,13 @@ public class PGPWindow2 extends JFrame {
 
     public void setKeyRing(PGPKeyRingGenerator keyRing) {
         this.keyRing = keyRing;
+    }
+
+    public JButton getEncMsgBtn() {
+        return encMsgBtn;
+    }
+
+    public void setEncMsgBtn(JButton encMsgBtn) {
+        this.encMsgBtn = encMsgBtn;
     }
 }
