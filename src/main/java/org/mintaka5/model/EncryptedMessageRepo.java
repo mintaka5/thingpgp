@@ -7,6 +7,7 @@ import org.dizitart.no2.objects.Indices;
 import org.json.JSONObject;
 
 import java.io.Serializable;
+import java.util.Base64;
 
 @Indices({
         @Index(value = "hash", type = IndexType.Unique)
@@ -52,7 +53,7 @@ public class EncryptedMessageRepo implements Serializable {
         JSONObject j = new JSONObject();
         j.put(JSON_HASH_NAME, getHash());
         j.put(JSON_TIMESTAMP_NAME, getTimestamp());
-        j.put(JSON_MSG_NAME, getMessage());
+        j.put(JSON_MSG_NAME, Base64.getEncoder().encodeToString(getMessage()));
 
         return j.toString();
     }

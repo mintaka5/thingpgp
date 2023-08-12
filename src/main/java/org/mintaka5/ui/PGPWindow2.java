@@ -91,6 +91,9 @@ public class PGPWindow2 extends JFrame {
 
         postBuild();
 
+        // uncomment this for testing
+        buildTestFrame(this);
+
         SwingUtilities.invokeLater(() -> {
             setVisible(true);
             // minimize window while testing
@@ -118,6 +121,43 @@ public class PGPWindow2 extends JFrame {
             }
         };
         worker1.execute();*/
+    }
+
+    private void buildTestFrame(PGPWindow2 win) {
+        JFrame f = new JFrame();
+        f.setLayout(new BorderLayout());
+        f.setSize(640, 480);
+        f.setResizable(false);
+        f.setLocationByPlatform(true);
+
+        JPanel mp = new JPanel();
+
+        GridBagLayout gb = new GridBagLayout();
+        mp.setLayout(gb);
+        GridBagConstraints gc = new GridBagConstraints();
+
+        gc.gridx = 0;
+        gc.gridy = 0;
+
+        JToolBar tb = new JToolBar();
+
+        JButton listKeysBtn = new JButton("list keys");
+        listKeysBtn.addActionListener((e) -> {
+            keyRepo.find().toList().forEach(out::println);
+        });
+        tb.add(listKeysBtn);
+
+        JButton listMsgsBtn = new JButton("list msgs");
+        listMsgsBtn.addActionListener((e) -> {
+            msgRepo.find().toList().forEach(out::println);
+        });
+        tb.add(listMsgsBtn);
+
+        mp.add(tb, gc);
+
+        f.add(mp, BorderLayout.CENTER);
+
+        f.setVisible(true);
     }
 
     private void postBuild() throws IOException {
@@ -266,7 +306,7 @@ public class PGPWindow2 extends JFrame {
         p.add(pubKeyInfoPanel, gc);
 
         gc.gridx = 0;
-        gc.gridy = 3;
+        gc.gridy = 4;
         gc.weightx = 1;
         gc.weighty = 0;
         gc.fill = GridBagConstraints.HORIZONTAL;

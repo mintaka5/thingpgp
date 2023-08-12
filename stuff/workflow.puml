@@ -6,6 +6,7 @@ repeat
 :get keys;
 if(key exists?) then (yes)
     :set key;
+    note left: how do we store this?
     :encrypt;
     stop
 else (no)
